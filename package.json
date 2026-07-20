@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": "22 || 24"
+    "node": "22 || 24 || 26"
   },
   "scripts": {
     "start": "backstage-cli repo start",
@@ -47,6 +47,11 @@
     "node-gyp": "^10.0.0",
     "prettier": "^2.3.2",
     "typescript": "~5.8.0"
+  },
+  "dependenciesMeta": {
+    "isolated-vm": {
+      "built": false
+    }
   },
   "resolutions": {
     "@types/react": "^18",

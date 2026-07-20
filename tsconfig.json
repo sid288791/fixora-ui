@@ -12,6 +12,15 @@
   "compilerOptions": {
     "outDir": "dist-types",
     "rootDir": ".",
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@internal/plugin-fixora-dashboard": [
+        "plugins/fixora-dashboard/src/index.ts"
+      ],
+      "@internal/plugin-fixora-onboarding": [
+        "plugins/fixora-onboarding/src/index.ts"
+      ]
+    }
   }
 }
