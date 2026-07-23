@@ -37,9 +37,10 @@ import SearchIcon from '@material-ui/icons/Search';
 import ClearIcon from '@material-ui/icons/Clear';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import FileCopyIcon from '@material-ui/icons/FileCopy';
-import { useLocation } from 'react-router-dom';
+import NotificationsIcon from '@material-ui/icons/Notifications';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-const BASE_URL = 'http://localhost:8080/api';
+const BASE_URL = 'http://localhost:8081/api';
 
 const useStyles = makeStyles(theme => ({
   formField: {
@@ -364,6 +365,7 @@ function OnboardingForm() {
 
 function AdGroupLookup() {
   const classes = useStyles();
+  const navigate = useNavigate();
   const [adGroup, setAdGroup] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [apps, setApps] = useState<Application[]>([]);
@@ -462,7 +464,7 @@ function AdGroupLookup() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    {['ID', 'Name', 'Alias', 'Owner', 'AD Groups', 'Status', 'Created'].map(
+                    {['ID', 'Name', 'Alias', 'Owner', 'AD Groups', 'Status', 'Created', 'Actions'].map(
                       h => (
                         <TableCell key={h} className={classes.tableHeader}>
                           {h}
@@ -507,6 +509,17 @@ function AdGroupLookup() {
                       </TableCell>
                       <TableCell>
                         {new Date(app.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip title="Configure Alerts">
+                          <IconButton
+                            size="small"
+                            onClick={() => navigate(`/alerts/${app.id}`)}
+                            style={{ color: '#ff9800' }}
+                          >
+                            <NotificationsIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}

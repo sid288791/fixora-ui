@@ -26,6 +26,7 @@ import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import GroupIcon from '@material-ui/icons/Group';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
 import RefreshIcon from '@material-ui/icons/Refresh';
+import NotificationsIcon from '@material-ui/icons/Notifications';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const useStyles = makeStyles(theme => ({
@@ -70,6 +71,11 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.secondary,
     fontSize: '0.85rem',
   },
+  appActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
   quickActionCard: {
     borderRadius: 12,
     cursor: 'pointer',
@@ -105,7 +111,7 @@ interface DashboardData {
   registeredApplications: Application[];
 }
 
-const BASE_URL = 'http://localhost:8080/api';
+const BASE_URL = 'http://localhost:8081/api';
 
 function StatCard({
   icon,
@@ -258,17 +264,28 @@ export function DashboardPage() {
                             {app.alias} · {app.ownerEmail}
                           </Typography>
                         </Box>
-                        <Chip
-                          size="small"
-                          label={app.status}
-                          style={{
-                            backgroundColor:
-                              app.status === 'ACTIVE' ? '#e8f5e9' : '#fce4ec',
-                            color:
-                              app.status === 'ACTIVE' ? '#388e3c' : '#c62828',
-                            fontWeight: 600,
-                          }}
-                        />
+                        <Box className={classes.appActions}>
+                          <Tooltip title="Configure Alerts">
+                            <IconButton
+                              size="small"
+                              onClick={() => navigate(`/alerts/${app.id}`)}
+                              style={{ color: '#ff9800' }}
+                            >
+                              <NotificationsIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Chip
+                            size="small"
+                            label={app.status}
+                            style={{
+                              backgroundColor:
+                                app.status === 'ACTIVE' ? '#e8f5e9' : '#fce4ec',
+                              color:
+                                app.status === 'ACTIVE' ? '#388e3c' : '#c62828',
+                              fontWeight: 600,
+                            }}
+                          />
+                        </Box>
                       </Box>
                       {i < apps.length - 1 && <Divider />}
                     </React.Fragment>
