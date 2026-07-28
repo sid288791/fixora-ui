@@ -38,9 +38,11 @@ import {
   DialogActions,
 } from '@material-ui/core';
 import Alert from '@material-ui/lab/Alert';
+import ReactMarkdown from 'react-markdown';
 import EditIcon from '@material-ui/icons/Edit';
 import DeleteIcon from '@material-ui/icons/Delete';
 import RefreshIcon from '@material-ui/icons/Refresh';
+import CheckCircleOutlineIcon from '@material-ui/icons/CheckCircleOutline';
 import OpenInNewIcon from '@material-ui/icons/OpenInNew';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -82,6 +84,31 @@ const useStyles = makeStyles(theme => ({
     color: '#d32f2f',
     fontWeight: 600,
   },
+  markdownBody: {
+    fontSize: '0.9rem',
+    lineHeight: 1.6,
+    '& h1, & h2, & h3': {
+      fontSize: '1rem',
+      fontWeight: 700,
+      margin: theme.spacing(1.5, 0, 0.5),
+    },
+    '& p': {
+      margin: theme.spacing(0.5, 0),
+    },
+    '& ul': {
+      margin: theme.spacing(0.5, 0),
+      paddingLeft: theme.spacing(3),
+    },
+    '& li': {
+      marginBottom: theme.spacing(0.5),
+    },
+    '& code': {
+      backgroundColor: theme.palette.background.default,
+      padding: '2px 5px',
+      borderRadius: 4,
+      fontSize: '0.85em',
+    },
+  },
 }));
 
 interface AlertConfig {
@@ -104,6 +131,27 @@ interface AlertConfig {
   status?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface KeepAlert {
+  id: string;
+  name: string;
+  status: string;
+  severity: string;
+  message?: string;
+  source?: string[];
+  lastReceived?: string;
+  fingerprint: string;
+  firingCounter?: number;
+  occurrencesLast24h?: number;
+  unresolvedCounter?: number;
+  isPartialDuplicate?: boolean;
+  startedAt?: string;
+  ai_root_cause?: string;
+  ai_report?: string;
+  ai_based_on?: string;
+  ai_recommended_actions?: string[];
+  ai_investigated_at?: string;
 }
 
 interface Application {
@@ -742,6 +790,214 @@ function AlertList({
   );
 }
 
+function KeepAlertList({
+  applicationId,
+  bucket,
+  refreshTrigger,
+}: {
+  applicationId: number;
+  bucket: 'active' | 'closed';
+  refreshTrigger: number;
+}) {
+  const classes = useStyles();
+  const [alerts, setAlerts] = useState<KeepAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rcaAlert, setRcaAlert] = useState<KeepAlert | null>(null);
+
+  const fetchAlerts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BASE_URL}/applications/${applicationId}/alerts?bucket=${bucket}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data: KeepAlert[] = await res.json();
+      setAlerts(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to load alerts from Keep.');
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId, bucket]);
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts, refreshTrigger]);
+
+  if (loading) {
+    return (
+      <Box p={4} display="flex" justifyContent="center">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
+  }
+
+  if (alerts.length === 0) {
+    return (
+      <Box className={classes.emptyMsg}>
+        <Typography variant="h6" gutterBottom>
+          No {bucket} alerts
+        </Typography>
+        <Typography color="textSecondary">
+          {bucket === 'active'
+            ? 'Alerts sent for this application (firing or acknowledged) will show up here.'
+            : 'Resolved alerts for this application will show up here.'}
+        </Typography>
+      </Box>
+    );
+  }
+
+  const severityColor = (severity: string) => {
+    const s = severity?.toLowerCase();
+    if (s === 'critical') return { bg: '#fdecea', fg: '#b71c1c', border: '#e57373' };
+    if (s === 'high') return { bg: '#fff3e0', fg: '#e65100', border: '#ffb74d' };
+    if (s === 'medium' || s === 'warning') return { bg: '#e3f2fd', fg: '#1565c0', border: '#64b5f6' };
+    return { bg: '#f1f8e9', fg: '#33691e', border: '#aed581' };
+  };
+
+  const statusColor = (status: string) => {
+    if (status === 'firing') return { bg: '#fdecea', fg: '#c62828' };
+    if (status === 'acknowledged') return { bg: '#fff3e0', fg: '#e65100' };
+    return { bg: '#e8f5e9', fg: '#2e7d32' };
+  };
+
+  return (
+    <>
+      <Box display="flex" flexDirection="column" gridGap={12} p={2}>
+        {alerts.map(alert => {
+          const sev = severityColor(alert.severity);
+          const stat = statusColor(alert.status);
+          return (
+            <Paper
+              key={alert.fingerprint}
+              variant="outlined"
+              style={{ borderLeft: `4px solid ${sev.border}`, padding: 16 }}
+            >
+              <Box display="flex" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gridGap={8}>
+                <Box flex="1" minWidth={240}>
+                  <Box display="flex" alignItems="center" gridGap={8} flexWrap="wrap">
+                    <Typography variant="subtitle1" style={{ fontWeight: 700 }}>
+                      {alert.name}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={alert.status}
+                      style={{ backgroundColor: stat.bg, color: stat.fg, fontWeight: 600 }}
+                    />
+                    <Chip
+                      size="small"
+                      label={alert.severity}
+                      style={{ backgroundColor: sev.bg, color: sev.fg, fontWeight: 600 }}
+                    />
+                  </Box>
+                  <Typography variant="body2" color="textSecondary" style={{ marginTop: 6 }}>
+                    {alert.message || 'No message provided.'}
+                  </Typography>
+                  <Box display="flex" gridGap={16} flexWrap="wrap" style={{ marginTop: 8 }}>
+                    <Typography variant="caption" color="textSecondary">
+                      Source: {alert.source?.join(', ') || '-'}
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      Last received: {alert.lastReceived ? new Date(alert.lastReceived).toLocaleString() : '-'}
+                    </Typography>
+                    {!!alert.firingCounter && alert.firingCounter > 1 && (
+                      <Typography variant="caption" style={{ color: '#e65100', fontWeight: 600 }}>
+                        {alert.occurrencesLast24h != null
+                          ? `Fired ${alert.occurrencesLast24h}x in the last 24h`
+                          : `Fired ${alert.firingCounter}x`}
+                        {' '}
+                        ({alert.firingCounter}x total{alert.startedAt ? ` since ${new Date(alert.startedAt).toLocaleString()}` : ''})
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+
+                <Box>
+                  {alert.ai_root_cause ? (
+                    <Button size="small" variant="contained" color="primary" onClick={() => setRcaAlert(alert)}>
+                      View RCA
+                    </Button>
+                  ) : (
+                    <Chip size="small" label="Not investigated" variant="outlined" />
+                  )}
+                </Box>
+              </Box>
+            </Paper>
+          );
+        })}
+      </Box>
+
+      <Dialog open={!!rcaAlert} onClose={() => setRcaAlert(null)} maxWidth="md" fullWidth>
+        <DialogTitle>AI Investigation — {rcaAlert?.name}</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="overline" color="textSecondary">
+            Root Cause
+          </Typography>
+          <Box className={classes.markdownBody} mb={2}>
+            <ReactMarkdown>{rcaAlert?.ai_root_cause ?? ''}</ReactMarkdown>
+          </Box>
+          {!!rcaAlert?.ai_recommended_actions?.length && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Typography variant="overline" color="textSecondary">
+                Recommended Actions
+              </Typography>
+              <Box>
+                {rcaAlert.ai_recommended_actions.map((action, idx) => (
+                  <Box key={idx} display="flex" alignItems="flex-start" gridGap={8} mb={1}>
+                    <CheckCircleOutlineIcon fontSize="small" style={{ color: '#1565c0', marginTop: 2 }} />
+                    <Typography variant="body2">{action}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </>
+          )}
+          {rcaAlert?.ai_report && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Typography variant="overline" color="textSecondary">
+                Full Report
+              </Typography>
+              <Box className={classes.markdownBody}>
+                <ReactMarkdown>{rcaAlert.ai_report}</ReactMarkdown>
+              </Box>
+            </>
+          )}
+          {rcaAlert?.ai_based_on && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Typography variant="overline" color="textSecondary">
+                Based On
+              </Typography>
+              <Box className={classes.markdownBody}>
+                <ReactMarkdown>{rcaAlert.ai_based_on}</ReactMarkdown>
+              </Box>
+            </>
+          )}
+          {rcaAlert?.ai_investigated_at && (
+            <Typography variant="caption" color="textSecondary">
+              Investigated at {new Date(rcaAlert.ai_investigated_at).toLocaleString()}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRcaAlert(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
 export function AlertConfigPage() {
   const classes = useStyles();
   const { appId } = useParams<{ appId: string }>();
@@ -951,6 +1207,8 @@ export function AlertConfigPage() {
           >
             <Tab label="Alert List" />
             <Tab label={editingAlert ? "Edit Alert" : "Create New Alert"} />
+            <Tab label="Active Alerts" />
+            <Tab label="Closed Alerts" />
           </Tabs>
           <Divider />
         </Paper>
@@ -975,6 +1233,24 @@ export function AlertConfigPage() {
               editingAlert={editingAlert}
               onCancel={editingAlert ? () => { setEditingAlert(null); setTab(0); } : undefined}
             />
+          </TabPanel>
+          <TabPanel value={tab} index={2}>
+            <InfoCard title="Active Alerts (Firing & Acknowledged)" noPadding>
+              <KeepAlertList
+                applicationId={Number(appId)}
+                bucket="active"
+                refreshTrigger={refreshTrigger}
+              />
+            </InfoCard>
+          </TabPanel>
+          <TabPanel value={tab} index={3}>
+            <InfoCard title="Closed Alerts (Resolved)" noPadding>
+              <KeepAlertList
+                applicationId={Number(appId)}
+                bucket="closed"
+                refreshTrigger={refreshTrigger}
+              />
+            </InfoCard>
           </TabPanel>
         </Box>
 
