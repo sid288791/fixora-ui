@@ -111,7 +111,7 @@ interface DashboardData {
   registeredApplications: Application[];
 }
 
-const BASE_URL = 'http://localhost:8081/api';
+const BASE_URL = 'http://localhost:8083/api';
 
 function StatCard({
   icon,
