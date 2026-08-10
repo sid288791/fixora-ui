@@ -152,6 +152,8 @@ interface KeepAlert {
   ai_based_on?: string;
   ai_recommended_actions?: string[];
   ai_investigated_at?: string;
+  fixora_rca_note?: string;
+  fixora_closed_at?: string;
 }
 
 interface Application {
@@ -804,6 +806,10 @@ function KeepAlertList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rcaAlert, setRcaAlert] = useState<KeepAlert | null>(null);
+  const [closingAlert, setClosingAlert] = useState<KeepAlert | null>(null);
+  const [closeNote, setCloseNote] = useState('');
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -825,6 +831,33 @@ function KeepAlertList({
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts, refreshTrigger]);
+
+  const handleConfirmClose = async () => {
+    if (!closingAlert) return;
+    setClosing(true);
+    setCloseError(null);
+    try {
+      const res = await fetch(
+        `${BASE_URL}/applications/${applicationId}/alerts/${encodeURIComponent(closingAlert.fingerprint)}/close`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rcaNote: closeNote.trim() || undefined }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      setClosingAlert(null);
+      setCloseNote('');
+      await fetchAlerts();
+    } catch (err: any) {
+      setCloseError(err.message ?? 'Failed to close alert.');
+    } finally {
+      setClosing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -922,7 +955,7 @@ function KeepAlertList({
                   </Box>
                 </Box>
 
-                <Box>
+                <Box display="flex" flexDirection="column" alignItems="flex-end" gridGap={8}>
                   {alert.ai_root_cause ? (
                     <Button size="small" variant="contained" color="primary" onClick={() => setRcaAlert(alert)}>
                       View RCA
@@ -930,8 +963,29 @@ function KeepAlertList({
                   ) : (
                     <Chip size="small" label="Not investigated" variant="outlined" />
                   )}
+                  {bucket === 'active' && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="secondary"
+                      onClick={() => { setClosingAlert(alert); setCloseNote(''); setCloseError(null); }}
+                    >
+                      Close Alert
+                    </Button>
+                  )}
                 </Box>
               </Box>
+              {bucket === 'closed' && alert.fixora_rca_note && (
+                <>
+                  <Divider style={{ margin: '12px 0' }} />
+                  <Typography variant="overline" color="textSecondary">
+                    RCA Note
+                  </Typography>
+                  <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>
+                    {alert.fixora_rca_note}
+                  </Typography>
+                </>
+              )}
             </Paper>
           );
         })}
@@ -992,6 +1046,45 @@ function KeepAlertList({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRcaAlert(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!closingAlert}
+        onClose={() => (closing ? undefined : setClosingAlert(null))}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Close Alert — {closingAlert?.name}</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="textSecondary" style={{ marginBottom: 16 }}>
+            This resolves the alert in Keep and moves it to Closed Alerts. If this alert paged
+            someone through GoAlert, the matching GoAlert alert is closed too, so it stops
+            escalating.
+          </Typography>
+          <TextField
+            label="RCA note (optional)"
+            placeholder="What was the root cause, and how was it fixed?"
+            multiline
+            minRows={4}
+            fullWidth
+            value={closeNote}
+            onChange={e => setCloseNote(e.target.value)}
+            disabled={closing}
+          />
+          {closeError && (
+            <Alert severity="error" style={{ marginTop: 16 }}>
+              {closeError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClosingAlert(null)} disabled={closing}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmClose} color="secondary" variant="contained" disabled={closing}>
+            {closing ? 'Closing...' : 'Close Alert'}
+          </Button>
         </DialogActions>
       </Dialog>
     </>
