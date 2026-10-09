@@ -152,6 +152,8 @@ interface KeepAlert {
   ai_based_on?: string;
   ai_recommended_actions?: string[];
   ai_investigated_at?: string;
+  fixora_rca_note?: string;
+  fixora_closed_at?: string;
 }
 
 interface Application {
@@ -804,6 +806,36 @@ function KeepAlertList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rcaAlert, setRcaAlert] = useState<KeepAlert | null>(null);
+  const [closingAlert, setClosingAlert] = useState<KeepAlert | null>(null);
+  const [closeNote, setCloseNote] = useState('');
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [deepAnalysisAlert, setDeepAnalysisAlert] = useState<KeepAlert | null>(null);
+  const [deepAnalysisResult, setDeepAnalysisResult] = useState<any>(null);
+  const [deepAnalysisLoading, setDeepAnalysisLoading] = useState(false);
+  const [deepAnalysisError, setDeepAnalysisError] = useState<string | null>(null);
+
+  const handleStartDeepAnalysis = async (alert: KeepAlert) => {
+    setDeepAnalysisAlert(alert);
+    setDeepAnalysisResult(null);
+    setDeepAnalysisError(null);
+    setDeepAnalysisLoading(true);
+    try {
+      const res = await fetch(
+        `${BASE_URL}/applications/${applicationId}/alerts/${encodeURIComponent(alert.fingerprint)}/deep-analysis`,
+        { method: 'POST' },
+      );
+      const body = await res.json();
+      if (!res.ok || body.success === false) {
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      setDeepAnalysisResult(body);
+    } catch (err: any) {
+      setDeepAnalysisError(err.message ?? 'Deep analysis failed.');
+    } finally {
+      setDeepAnalysisLoading(false);
+    }
+  };
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -825,6 +857,33 @@ function KeepAlertList({
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts, refreshTrigger]);
+
+  const handleConfirmClose = async () => {
+    if (!closingAlert) return;
+    setClosing(true);
+    setCloseError(null);
+    try {
+      const res = await fetch(
+        `${BASE_URL}/applications/${applicationId}/alerts/${encodeURIComponent(closingAlert.fingerprint)}/close`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rcaNote: closeNote.trim() || undefined }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      setClosingAlert(null);
+      setCloseNote('');
+      await fetchAlerts();
+    } catch (err: any) {
+      setCloseError(err.message ?? 'Failed to close alert.');
+    } finally {
+      setClosing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -922,7 +981,7 @@ function KeepAlertList({
                   </Box>
                 </Box>
 
-                <Box>
+                <Box display="flex" flexDirection="column" alignItems="flex-end" gridGap={8}>
                   {alert.ai_root_cause ? (
                     <Button size="small" variant="contained" color="primary" onClick={() => setRcaAlert(alert)}>
                       View RCA
@@ -930,8 +989,29 @@ function KeepAlertList({
                   ) : (
                     <Chip size="small" label="Not investigated" variant="outlined" />
                   )}
+                  {bucket === 'active' && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="secondary"
+                      onClick={() => { setClosingAlert(alert); setCloseNote(''); setCloseError(null); }}
+                    >
+                      Close Alert
+                    </Button>
+                  )}
                 </Box>
               </Box>
+              {bucket === 'closed' && alert.fixora_rca_note && (
+                <>
+                  <Divider style={{ margin: '12px 0' }} />
+                  <Typography variant="overline" color="textSecondary">
+                    RCA Note
+                  </Typography>
+                  <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>
+                    {alert.fixora_rca_note}
+                  </Typography>
+                </>
+              )}
             </Paper>
           );
         })}
@@ -989,9 +1069,147 @@ function KeepAlertList({
               Investigated at {new Date(rcaAlert.ai_investigated_at).toLocaleString()}
             </Typography>
           )}
+          {rcaAlert && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => handleStartDeepAnalysis(rcaAlert)}
+              >
+                Start Deep Analysis
+              </Button>
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRcaAlert(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!deepAnalysisAlert}
+        onClose={() => (deepAnalysisLoading ? undefined : setDeepAnalysisAlert(null))}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Deep Analysis — {deepAnalysisAlert?.name}</DialogTitle>
+        <DialogContent dividers>
+          {deepAnalysisLoading && (
+            <Box display="flex" flexDirection="column" alignItems="center" p={4} gridGap={12}>
+              <CircularProgress />
+              <Typography variant="body2" color="textSecondary">
+                Running diagnostic agents (Kibana log search)...
+              </Typography>
+            </Box>
+          )}
+          {deepAnalysisError && <Alert severity="error">{deepAnalysisError}</Alert>}
+          {deepAnalysisResult && (
+            <>
+              <Typography variant="overline" color="textSecondary">
+                Root Cause ({Math.round((deepAnalysisResult.root_cause_analysis?.confidence ?? 0) * 100)}% confidence)
+              </Typography>
+              <Typography variant="body1" style={{ marginBottom: 16 }}>
+                {deepAnalysisResult.root_cause_analysis?.root_cause}
+              </Typography>
+
+              {!!deepAnalysisResult.root_cause_analysis?.recommended_actions?.length && (
+                <>
+                  <Divider style={{ margin: '16px 0' }} />
+                  <Typography variant="overline" color="textSecondary">
+                    Recommended Actions
+                  </Typography>
+                  <Box>
+                    {deepAnalysisResult.root_cause_analysis.recommended_actions.map((action: string, idx: number) => (
+                      <Box key={idx} display="flex" alignItems="flex-start" gridGap={8} mb={1}>
+                        <CheckCircleOutlineIcon fontSize="small" style={{ color: '#1565c0', marginTop: 2 }} />
+                        <Typography variant="body2">{action}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </>
+              )}
+
+              {!!deepAnalysisResult.evidence_collected?.length && (
+                <>
+                  <Divider style={{ margin: '16px 0' }} />
+                  <Typography variant="overline" color="textSecondary">
+                    Supporting Evidence
+                  </Typography>
+                  {deepAnalysisResult.evidence_collected.map((e: any, idx: number) => (
+                    <Box key={idx} mb={1}>
+                      <Typography variant="body2" style={{ fontWeight: e.anomaly ? 700 : 400 }}>
+                        [{e.agent}.{e.check}] {e.finding}
+                      </Typography>
+                    </Box>
+                  ))}
+                </>
+              )}
+
+              {!!deepAnalysisResult.root_cause_analysis?.unresolved_questions?.length && (
+                <>
+                  <Divider style={{ margin: '16px 0' }} />
+                  <Typography variant="overline" color="textSecondary">
+                    Unresolved Questions
+                  </Typography>
+                  {deepAnalysisResult.root_cause_analysis.unresolved_questions.map((q: string, idx: number) => (
+                    <Typography variant="body2" key={idx}>
+                      • {q}
+                    </Typography>
+                  ))}
+                </>
+              )}
+
+              <Divider style={{ margin: '16px 0' }} />
+              <Typography variant="caption" color="textSecondary">
+                {deepAnalysisResult.iterations_used} of {deepAnalysisResult.max_iterations} diagnostic iterations used.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeepAnalysisAlert(null)} disabled={deepAnalysisLoading}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!closingAlert}
+        onClose={() => (closing ? undefined : setClosingAlert(null))}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Close Alert — {closingAlert?.name}</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="textSecondary" style={{ marginBottom: 16 }}>
+            This resolves the alert in Keep and moves it to Closed Alerts. If this alert paged
+            someone through GoAlert, the matching GoAlert alert is closed too, so it stops
+            escalating.
+          </Typography>
+          <TextField
+            label="RCA note (optional)"
+            placeholder="What was the root cause, and how was it fixed?"
+            multiline
+            minRows={4}
+            fullWidth
+            value={closeNote}
+            onChange={e => setCloseNote(e.target.value)}
+            disabled={closing}
+          />
+          {closeError && (
+            <Alert severity="error" style={{ marginTop: 16 }}>
+              {closeError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClosingAlert(null)} disabled={closing}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmClose} color="secondary" variant="contained" disabled={closing}>
+            {closing ? 'Closing...' : 'Close Alert'}
+          </Button>
         </DialogActions>
       </Dialog>
     </>
